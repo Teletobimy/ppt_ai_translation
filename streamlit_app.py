@@ -533,6 +533,7 @@ def info_tab():
     
     - **기본값**: 일반적인 뷰티 업계 톤
     - **Med/Pharma Pro (20y)**: 의료기기/전문약사 20년 전문가 톤
+    - **Medical/Science Expert**: 의학/과학 번역 전문가 (정확한 의학 용어 사용)
     - **Beauty Pro (20y, chic)**: 세련된 뷰티 20년 전문가 톤
     - **GenZ Female (20s)**: 20대 여성 타깃의 친근한 톤
     

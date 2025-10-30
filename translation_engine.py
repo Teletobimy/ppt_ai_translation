@@ -36,6 +36,7 @@ LANG_OPTIONS = [
 TONE_OPTIONS = [
     "기본값",
     "Med/Pharma Pro (20y)",   # 의료기기/전문약사 20년 전문가
+    "Medical/Science Expert", # 의학/과학 번역 전문가
     "Beauty Pro (20y, chic)", # 세련된 뷰티 20년 전문가
     "GenZ Female (20s)",      # 20대 여성 타깃
 ]
@@ -327,6 +328,13 @@ def build_tone_instructions(tone: str) -> str:
             "Use a modern, friendly, and concise tone tailored for women in their 20s. "
             "Be clear and engaging for social content, but avoid slang overload, emojis, and exaggerated claims."
         )
+    if tone == "Medical/Science Expert":
+        return (
+            "Use a precise, scientific, and clinically accurate tone suitable for medical and scientific documentation. "
+            "Maintain strict adherence to medical terminology, biological processes, and scientific accuracy. "
+            "Preserve technical terms, Latin names, and scientific nomenclature exactly as they appear. "
+            "Ensure translations are suitable for medical professionals, researchers, and regulatory submissions."
+        )
     # fallback
     return "Use a neutral professional tone appropriate for the beauty industry."
 
@@ -356,7 +364,35 @@ def build_chinese_prompt(tagged_text: str, target_lang: str) -> str:
     )
 
 
+def build_medical_science_prompt(tagged_text: str, target_lang: str) -> str:
+    """
+    의학/과학 전문 번역을 위한 프롬프트
+    """
+    return (
+        f"You are a medical and scientific translation expert with 20+ years of experience. "
+        f"Translate the following Korean medical/scientific text into precise, professional {target_lang}. "
+        f"Only return the translated text. If there is nothing to translate, return an empty string.\n\n"
+        f"# Translation Guidelines:\n"
+        f"- Maintain strict scientific accuracy and medical terminology\n"
+        f"- Preserve all technical terms, Latin names, and scientific nomenclature exactly\n"
+        f"- Use appropriate medical/scientific vocabulary for the target language\n"
+        f"- Ensure the translation is suitable for medical professionals and researchers\n"
+        f"- Maintain the formal, clinical tone of scientific documentation\n"
+        f"- Keep biological processes, anatomical terms, and chemical names precise\n"
+        f"- If the source is already in {target_lang}, lightly copyedit for scientific accuracy\n\n"
+        f"# Critical Requirements:\n"
+        f"- Do NOT alter or remove any marker tags like [[R1]]...[[/R1]]\n"
+        f"- Keep all markers exactly as-is and in correct pairs\n"
+        f"- Preserve the exact structure and formatting\n\n"
+        f"Translate the following text:\n{tagged_text}"
+    )
+
+
 def build_prompt(tagged_text: str, target_lang: str, tone: str) -> str:
+    # Medical/Science Expert uses specialized prompt
+    if tone == "Medical/Science Expert":
+        return build_medical_science_prompt(tagged_text, target_lang)
+    
     # Chinese translation uses specialized prompt
     if "Chinese" in target_lang:
         return build_chinese_prompt(tagged_text, target_lang)
