@@ -94,6 +94,11 @@ def main():
     
     # Header
     st.markdown('<h1 class="main-header">🌐 PPT AI Translation & Comparison</h1>', unsafe_allow_html=True)
+
+    # Initialize per-session ID for isolation
+    import uuid
+    if 'session_id' not in st.session_state:
+        st.session_state.session_id = uuid.uuid4().hex[:12]
     
     # Get API keys from secrets (hidden from users)
     openai_api_key = st.secrets.get("OPENAI_API_KEY", "")
@@ -269,6 +274,7 @@ def translate_file(uploaded_file, openai_api_key: str, deepseek_api_key: str,
                 progress_callback,
                 font_scale,
                 use_smart_grouping,
+                st.session_state.get('session_id'),
                 should_stop
             )
         

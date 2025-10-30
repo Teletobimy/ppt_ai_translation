@@ -505,7 +505,7 @@ def process_nested_shapes(shapes, target_lang, tone, client, use_deepseek, font_
     return True
 
 
-def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_api_key: str, deepseek_api_key: str, use_deepseek=False, progress_callback=None, font_scale=1.0, use_smart_grouping=True, should_stop=None):
+def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_api_key: str, deepseek_api_key: str, use_deepseek=False, progress_callback=None, font_scale=1.0, use_smart_grouping=True, session_id: str | None = None, should_stop=None):
     """
     프레젠테이션을 번역하는 메인 함수
     progress_callback: (current_slide, total_slides, current_text) -> None
@@ -599,6 +599,11 @@ def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_a
     else:
         safe_tone = re.sub(r'[^0-9A-Za-z가-힣_()+-]', '', tone.replace(' ', ''))
         outfile_name = f"{stem}_{target_lang}_{safe_tone}_AI번역완료{ext}"
+    
+    # Make filename unique per session to avoid collisions across users
+    if session_id:
+        base, extension = os.path.splitext(outfile_name)
+        outfile_name = f"{base}_{session_id}{extension}"
     
     outfile_path = os.path.join(folder, outfile_name)
     outfile_path = unique_path(outfile_path)
