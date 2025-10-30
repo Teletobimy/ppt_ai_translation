@@ -149,7 +149,7 @@ def main():
     tab1, tab2, tab3, tab4 = st.tabs(["📤 번역", "📊 비교", "🚩 검토", "ℹ️ 정보"])
     
     with tab1:
-        translation_tab(openai_api_key, deepseek_api_key, target_language, tone, use_deepseek, auto_evaluate, confidence_threshold)
+        translation_tab(openai_api_key, deepseek_api_key, target_language, tone, use_deepseek, auto_evaluate, confidence_threshold, font_scale)
     
     with tab2:
         comparison_tab()
