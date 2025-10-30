@@ -139,6 +139,37 @@ def _apply_font_attrs(run, attrs):
         f.color.rgb = RGBColor(r, g, b)
 
 
+def adjust_font_size_for_translation(original_size, font_scale):
+    """번역된 텍스트의 폰트 크기를 조정"""
+    if original_size is None:
+        return None
+    return original_size * font_scale
+
+
+def _apply_font_attrs_with_scale(run, attrs, font_scale=1.0):
+    """폰트 속성을 적용하되 크기를 조정"""
+    from pptx.util import Pt
+    f = run.font
+
+    if attrs.get("name") is not None:
+        f.name = attrs["name"]
+    
+    # 폰트 크기 조정 적용
+    if attrs.get("size") is not None:
+        adjusted_size = adjust_font_size_for_translation(attrs["size"], font_scale)
+        f.size = Pt(adjusted_size)
+    
+    if attrs.get("bold") is not None:
+        f.bold = attrs["bold"]
+    if attrs.get("italic") is not None:
+        f.italic = attrs["italic"]
+    if attrs.get("underline") is not None:
+        f.underline = attrs["underline"]
+    if attrs.get("rgb") is not None:
+        r, g, b = attrs["rgb"]
+        f.color.rgb = RGBColor(r, g, b)
+
+
 def tag_paragraph(paragraph):
     text_parts, style_map, idx = [], {}, 1
     for run in paragraph.runs:
@@ -151,7 +182,7 @@ def tag_paragraph(paragraph):
     return "".join(text_parts), style_map
 
 
-def rebuild_paragraph_from_tagged(paragraph, translated, style_map):
+def rebuild_paragraph_from_tagged(paragraph, translated, style_map, font_scale=1.0):
     while paragraph.runs:
         paragraph.runs[0]._r.getparent().remove(paragraph.runs[0]._r)
 
@@ -200,7 +231,10 @@ def rebuild_paragraph_from_tagged(paragraph, translated, style_map):
         r = paragraph.add_run()
         r.text = txt
         if run_id and run_id in style_map:
-            _apply_font_attrs(r, style_map[run_id])
+            if font_scale != 1.0:
+                _apply_font_attrs_with_scale(r, style_map[run_id], font_scale)
+            else:
+                _apply_font_attrs(r, style_map[run_id])
 
 
 def _parse_run_chunks(translated):
@@ -244,7 +278,7 @@ def _parse_run_chunks(translated):
     return ids, chunks, has_outside
 
 
-def try_inplace_update_paragraph(paragraph, translated):
+def try_inplace_update_paragraph(paragraph, translated, font_scale=1.0):
     """마커가 1..N으로 정확히 존재하고, 마커 밖 텍스트가 없으면
     기존 runs에 텍스트만 주입하여 서식을 100% 유지한다."""
     ids, chunks, has_outside = _parse_run_chunks(translated)
@@ -257,6 +291,12 @@ def try_inplace_update_paragraph(paragraph, translated):
 
     for i, run in enumerate(runs, start=1):
         run.text = chunks.get(i, "")
+        # 폰트 크기 조정 적용
+        if font_scale != 1.0 and run.font.size is not None:
+            from pptx.util import Pt
+            original_size = run.font.size.pt
+            adjusted_size = original_size * font_scale
+            run.font.size = Pt(adjusted_size)
     return True
 
 
@@ -359,7 +399,7 @@ def gpt_translate_tagged(tagged_text: str, client, target_lang: str, tone: str, 
     return content
 
 
-def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_api_key: str, deepseek_api_key: str, use_deepseek=False, progress_callback=None):
+def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_api_key: str, deepseek_api_key: str, use_deepseek=False, progress_callback=None, font_scale=1.0):
     """
     프레젠테이션을 번역하는 메인 함수
     progress_callback: (current_slide, total_slides, current_text) -> None
@@ -428,9 +468,9 @@ def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_a
                     translated = gpt_translate_tagged(tagged, client, target_lang, tone, use_deepseek)
                     translated = translated.strip().strip('"').strip("'")
                     
-                    if not try_inplace_update_paragraph(p, translated):
+                    if not try_inplace_update_paragraph(p, translated, font_scale):
                       # 2️⃣ 실패하면 rebuild 방식으로 fallback
-                       rebuild_paragraph_from_tagged(p, translated, style_map)
+                       rebuild_paragraph_from_tagged(p, translated, style_map, font_scale)
                     
                     time.sleep(SLEEP_SEC)
 
@@ -448,8 +488,8 @@ def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_a
                             translated = gpt_translate_tagged(tagged, client, target_lang, tone, use_deepseek)
                             translated = translated.strip().strip('"').strip("'")
                             
-                            if not try_inplace_update_paragraph(p, translated):
-                                rebuild_paragraph_from_tagged(p, translated, style_map)
+                            if not try_inplace_update_paragraph(p, translated, font_scale):
+                                rebuild_paragraph_from_tagged(p, translated, style_map, font_scale)
                             time.sleep(SLEEP_SEC)
 
     folder = os.path.dirname(pptx_path)

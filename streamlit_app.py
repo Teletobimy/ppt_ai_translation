@@ -121,6 +121,26 @@ def main():
             help="중국어 번역 시 DeepSeek API를 사용합니다"
         )
         
+        # Font size adjustment
+        st.markdown("---")
+        st.subheader("🎨 폰트 설정")
+        
+        font_scale = st.slider(
+            "폰트 크기 배율",
+            min_value=0.5,
+            max_value=2.0,
+            value=1.0,
+            step=0.1,
+            help="1.0이 기본 크기입니다. 0.5는 절반 크기, 2.0은 두 배 크기입니다"
+        )
+        
+        # Show preview
+        if font_scale != 1.0:
+            if font_scale < 1.0:
+                st.info(f"폰트 크기가 {font_scale:.1f}배로 조정됩니다 (작아짐)")
+            else:
+                st.info(f"폰트 크기가 {font_scale:.1f}배로 조정됩니다 (커짐)")
+        
         # Fixed accuracy settings (hidden from users)
         confidence_threshold = 70
         auto_evaluate = True
@@ -171,12 +191,12 @@ def translation_tab(openai_api_key: str, deepseek_api_key: str, target_language:
         # Translation button
         if st.button("🚀 번역 시작", type="primary", use_container_width=True):
             translate_file(uploaded_file, openai_api_key, deepseek_api_key, 
-                          target_language, tone, use_deepseek, auto_evaluate, confidence_threshold)
+                          target_language, tone, use_deepseek, auto_evaluate, confidence_threshold, font_scale)
 
 
 def translate_file(uploaded_file, openai_api_key: str, deepseek_api_key: str, 
                   target_language: str, tone: str, use_deepseek: bool, 
-                  auto_evaluate: bool, confidence_threshold: int):
+                  auto_evaluate: bool, confidence_threshold: int, font_scale: float = 1.0):
     """Handle file translation"""
     
     try:
@@ -203,7 +223,8 @@ def translate_file(uploaded_file, openai_api_key: str, deepseek_api_key: str,
                 openai_api_key,
                 deepseek_api_key,
                 use_deepseek,
-                progress_callback
+                progress_callback,
+                font_scale
             )
         
         # Translation completed
