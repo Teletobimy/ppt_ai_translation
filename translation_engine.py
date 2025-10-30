@@ -640,10 +640,21 @@ def get_text_box_metadata(text_box):
         # 첫 번째 문단의 첫 번째 run의 스타일
         if text_box.text_frame.paragraphs and text_box.text_frame.paragraphs[0].runs:
             first_run = text_box.text_frame.paragraphs[0].runs[0]
+            # 안전한 색상 정보 추출
+            font_color = None
+            if first_run.font.color:
+                try:
+                    if hasattr(first_run.font.color, 'rgb') and first_run.font.color.rgb:
+                        font_color = str(first_run.font.color.rgb)
+                    elif hasattr(first_run.font.color, 'theme_color'):
+                        font_color = f"theme_color_{first_run.font.color.theme_color}"
+                except (AttributeError, TypeError):
+                    font_color = None
+            
             metadata["style"] = {
                 "font_name": first_run.font.name,
                 "font_size": first_run.font.size.pt if first_run.font.size else None,
-                "font_color": str(first_run.font.color.rgb) if first_run.font.color and first_run.font.color.rgb else None,
+                "font_color": font_color,
                 "bold": first_run.font.bold,
                 "italic": first_run.font.italic,
                 "underline": first_run.font.underline
