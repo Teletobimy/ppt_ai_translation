@@ -238,7 +238,7 @@ def translate_file(uploaded_file, openai_api_key: str, deepseek_api_key: str,
         
         def progress_callback(current_slide, total_slides, current_text):
             if total_slides > 0:
-                progress = current_slide / total_slides
+                progress = min(current_slide / total_slides, 1.0)  # 1.0을 초과하지 않도록 제한
             else:
                 progress = 0.0
             progress_bar.progress(progress)

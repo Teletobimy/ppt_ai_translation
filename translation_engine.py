@@ -419,7 +419,7 @@ def process_nested_shapes(shapes, target_lang, tone, client, use_deepseek, font_
                 preview = (tagged[:40] + "...") if len(tagged) > 40 else tagged
                 print(f"   🔤 번역 중(중첩텍스트): {preview}")
                 if progress_callback:
-                    progress_callback(slide_num, 1, f"중첩 텍스트 번역 중: {preview}")
+                    progress_callback(slide_num, slide_num, f"중첩 텍스트 번역 중: {preview}")
                 
                 translated = gpt_translate_tagged(tagged, client, target_lang, tone, use_deepseek)
                 translated = translated.strip().strip('"').strip("'")
