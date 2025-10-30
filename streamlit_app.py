@@ -162,7 +162,7 @@ def main():
 
 
 def translation_tab(openai_api_key: str, deepseek_api_key: str, target_language: str, 
-                   tone: str, use_deepseek: bool, auto_evaluate: bool, confidence_threshold: int):
+                   tone: str, use_deepseek: bool, auto_evaluate: bool, confidence_threshold: int, font_scale: float = 1.0):
     """Translation tab content"""
     
     st.markdown('<h2 class="sub-header">📤 PPT 번역</h2>', unsafe_allow_html=True)
