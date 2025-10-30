@@ -40,7 +40,7 @@ TONE_OPTIONS = [
     "GenZ Female (20s)",      # 20대 여성 타깃
 ]
 
-OPENAI_MODEL = "gpt-4o"
+OPENAI_MODEL = "gpt-5"
 DEEPSEEK_MODEL = "deepseek-chat"
 SLEEP_SEC = 0
 
