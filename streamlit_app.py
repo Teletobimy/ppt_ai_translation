@@ -91,28 +91,15 @@ def main():
     # Header
     st.markdown('<h1 class="main-header">🌐 PPT AI Translation & Comparison</h1>', unsafe_allow_html=True)
     
+    # Get API keys from secrets (hidden from users)
+    openai_api_key = st.secrets.get("OPENAI_API_KEY", "")
+    deepseek_api_key = st.secrets.get("DEEPSEEK_API_KEY", "")
+    
     # Sidebar for settings
     with st.sidebar:
-        st.header("⚙️ 설정")
-        
-        # API Keys
-        st.subheader("API 키 설정")
-        openai_api_key = st.text_input(
-            "OpenAI API Key",
-            type="password",
-            value=st.secrets.get("OPENAI_API_KEY", ""),
-            help="OpenAI API 키를 입력하세요"
-        )
-        
-        deepseek_api_key = st.text_input(
-            "DeepSeek API Key",
-            type="password",
-            value=st.secrets.get("DEEPSEEK_API_KEY", ""),
-            help="DeepSeek API 키를 입력하세요 (중국어 번역용)"
-        )
+        st.header("⚙️ 번역 설정")
         
         # Translation Settings
-        st.subheader("번역 설정")
         target_language = st.selectbox(
             "대상 언어",
             LANG_OPTIONS,
@@ -134,21 +121,9 @@ def main():
             help="중국어 번역 시 DeepSeek API를 사용합니다"
         )
         
-        # Accuracy Settings
-        st.subheader("정확도 설정")
-        confidence_threshold = st.slider(
-            "신뢰도 임계값 (%)",
-            min_value=0,
-            max_value=100,
-            value=70,
-            help="이 값보다 낮은 신뢰도의 번역은 플래그됩니다"
-        )
-        
-        auto_evaluate = st.checkbox(
-            "자동 정확도 평가",
-            value=True,
-            help="번역 완료 후 자동으로 정확도를 평가합니다"
-        )
+        # Fixed accuracy settings (hidden from users)
+        confidence_threshold = 70
+        auto_evaluate = True
     
     # Main content area
     tab1, tab2, tab3, tab4 = st.tabs(["📤 번역", "📊 비교", "🚩 검토", "ℹ️ 정보"])
@@ -186,11 +161,11 @@ def translation_tab(openai_api_key: str, deepseek_api_key: str, target_language:
         
         # API key validation
         if not openai_api_key:
-            st.error("❌ OpenAI API 키를 입력해주세요.")
+            st.error("❌ 서비스가 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해주세요.")
             return
         
         if "Chinese" in target_language and use_deepseek and not deepseek_api_key:
-            st.error("❌ 중국어 번역을 위해 DeepSeek API 키를 입력해주세요.")
+            st.error("❌ 중국어 번역 서비스가 일시적으로 사용할 수 없습니다. 다른 언어를 선택하거나 잠시 후 다시 시도해주세요.")
             return
         
         # Translation button
