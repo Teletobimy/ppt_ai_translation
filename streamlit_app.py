@@ -237,9 +237,15 @@ def translate_file(uploaded_file, openai_api_key: str, deepseek_api_key: str,
         status_text = st.empty()
         
         def progress_callback(current_slide, total_slides, current_text):
-            progress = current_slide / total_slides
+            if total_slides > 0:
+                progress = current_slide / total_slides
+            else:
+                progress = 0.0
             progress_bar.progress(progress)
-            status_text.text(f"진행률: {current_slide}/{total_slides} - {current_text}")
+            if total_slides > 0:
+                status_text.text(f"진행률: {current_slide}/{total_slides} - {current_text}")
+            else:
+                status_text.text(f"처리 중: {current_text}")
         
         # Start translation
         with st.spinner("번역 중..."):
