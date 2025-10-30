@@ -435,7 +435,7 @@ def gpt_translate_tagged(tagged_text: str, client, target_lang: str, tone: str, 
     return content
 
 
-def process_nested_shapes(shapes, target_lang, tone, client, use_deepseek, font_scale, progress_callback, slide_num, shape_path="", should_stop=None):
+def process_nested_shapes(shapes, target_lang, tone, client, use_deepseek, font_scale, progress_callback, slide_num, total_slides, shape_path="", should_stop=None):
     """중첩된 shape들을 재귀적으로 처리"""
     for shape_idx, shape in enumerate(shapes):
         # 중지 신호 확인
@@ -455,7 +455,7 @@ def process_nested_shapes(shapes, target_lang, tone, client, use_deepseek, font_
                 preview = (tagged[:40] + "...") if len(tagged) > 40 else tagged
                 print(f"   🔤 번역 중(중첩텍스트): {preview}")
                 if progress_callback:
-                    progress_callback(slide_num, slide_num, f"중첩 텍스트 번역 중: {preview}")
+                    progress_callback(slide_num, total_slides, f"중첩 텍스트 번역 중: {preview}")
                 
                 translated = gpt_translate_tagged(tagged, client, target_lang, tone, use_deepseek)
                 translated = translated.strip().strip('"').strip("'")
@@ -489,7 +489,7 @@ def process_nested_shapes(shapes, target_lang, tone, client, use_deepseek, font_
                         print(f"     🔍 셀 내부 shape 발견 (행:{row_idx}, 열:{cell_idx})")
                         if not process_nested_shapes(
                             cell.shapes, target_lang, tone, client, use_deepseek, 
-                            font_scale, progress_callback, slide_num, f"{current_path}.table_{row_idx}_{cell_idx}", should_stop
+                            font_scale, progress_callback, slide_num, total_slides, f"{current_path}.table_{row_idx}_{cell_idx}", should_stop
                         ):
                             return False
         
@@ -498,7 +498,7 @@ def process_nested_shapes(shapes, target_lang, tone, client, use_deepseek, font_
             print(f"   🔍 그룹 shape 발견 (경로: {current_path})")
             if not process_nested_shapes(
                 shape.shapes, target_lang, tone, client, use_deepseek, 
-                font_scale, progress_callback, slide_num, current_path, should_stop
+                font_scale, progress_callback, slide_num, total_slides, current_path, should_stop
             ):
                 return False
     
@@ -566,7 +566,7 @@ def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_a
         # 모든 shape를 재귀적으로 처리 (중첩된 표, 텍스트박스 등 포함)
         if not process_nested_shapes(
             slide.shapes, target_lang, tone, client, use_deepseek, 
-            font_scale, progress_callback, s_idx, "", should_stop
+            font_scale, progress_callback, s_idx, slide_count, "", should_stop
         ):
             print(f"⏹️ 슬라이드 {s_idx}에서 번역이 중지되었습니다.")
             return None
