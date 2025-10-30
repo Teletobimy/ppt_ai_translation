@@ -505,7 +505,7 @@ def process_nested_shapes(shapes, target_lang, tone, client, use_deepseek, font_
     return True
 
 
-def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_api_key: str, deepseek_api_key: str, use_deepseek=False, progress_callback=None, font_scale=1.0, should_stop=None):
+def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_api_key: str, deepseek_api_key: str, use_deepseek=False, progress_callback=None, font_scale=1.0, use_smart_grouping=True, should_stop=None):
     """
     프레젠테이션을 번역하는 메인 함수
     progress_callback: (current_slide, total_slides, current_text) -> None
@@ -562,14 +562,32 @@ def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_a
         if should_stop and should_stop():
             print(f"⏹️ 슬라이드 {s_idx}에서 번역이 중지되었습니다.")
             return None
+        
+        # 스마트 그룹핑 사용 여부 확인
+        if use_smart_grouping:
+            # 스마트 그룹핑 먼저 시도
+            smart_grouping_success = apply_smart_grouping_to_slide(
+                slide, target_lang, tone, client, use_deepseek, font_scale
+            )
             
-        # 모든 shape를 재귀적으로 처리 (중첩된 표, 텍스트박스 등 포함)
-        if not process_nested_shapes(
-            slide.shapes, target_lang, tone, client, use_deepseek, 
-            font_scale, progress_callback, s_idx, slide_count, "", should_stop
-        ):
-            print(f"⏹️ 슬라이드 {s_idx}에서 번역이 중지되었습니다.")
-            return None
+            if not smart_grouping_success:
+                # 스마트 그룹핑 실패 시 기존 방식으로 처리
+                print(f"   🔄 기존 방식으로 슬라이드 {s_idx} 처리 중...")
+                if not process_nested_shapes(
+                    slide.shapes, target_lang, tone, client, use_deepseek, 
+                    font_scale, progress_callback, s_idx, slide_count, "", should_stop
+                ):
+                    print(f"⏹️ 슬라이드 {s_idx}에서 번역이 중지되었습니다.")
+                    return None
+        else:
+            # 스마트 그룹핑 비활성화 시 기존 방식으로 처리
+            print(f"   🔄 기존 방식으로 슬라이드 {s_idx} 처리 중...")
+            if not process_nested_shapes(
+                slide.shapes, target_lang, tone, client, use_deepseek, 
+                font_scale, progress_callback, s_idx, slide_count, "", should_stop
+            ):
+                print(f"⏹️ 슬라이드 {s_idx}에서 번역이 중지되었습니다.")
+                return None
 
     folder = os.path.dirname(pptx_path)
     stem, ext = os.path.splitext(os.path.basename(pptx_path))
@@ -591,3 +609,311 @@ def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_a
     print(f"✅ 번역 완료! 저장된 파일: {outfile_path}")
     
     return outfile_path
+
+
+# ========== [스마트 그룹핑 기능] ==========
+
+def get_text_box_metadata(text_box):
+    """텍스트박스의 메타데이터 추출"""
+    metadata = {
+        "text": "",
+        "position": {"left": 0, "top": 0, "width": 0, "height": 0},
+        "style": {},
+        "has_text_frame": False
+    }
+    
+    # 위치 정보
+    if hasattr(text_box, 'left'):
+        metadata["position"]["left"] = text_box.left
+    if hasattr(text_box, 'top'):
+        metadata["position"]["top"] = text_box.top
+    if hasattr(text_box, 'width'):
+        metadata["position"]["width"] = text_box.width
+    if hasattr(text_box, 'height'):
+        metadata["position"]["height"] = text_box.height
+    
+    # 텍스트 및 스타일 정보
+    if hasattr(text_box, 'text_frame') and text_box.text_frame:
+        metadata["has_text_frame"] = True
+        metadata["text"] = text_box.text_frame.text
+        
+        # 첫 번째 문단의 첫 번째 run의 스타일
+        if text_box.text_frame.paragraphs and text_box.text_frame.paragraphs[0].runs:
+            first_run = text_box.text_frame.paragraphs[0].runs[0]
+            metadata["style"] = {
+                "font_name": first_run.font.name,
+                "font_size": first_run.font.size.pt if first_run.font.size else None,
+                "font_color": str(first_run.font.color.rgb) if first_run.font.color and first_run.font.color.rgb else None,
+                "bold": first_run.font.bold,
+                "italic": first_run.font.italic,
+                "underline": first_run.font.underline
+            }
+    
+    return metadata
+
+
+def ai_analyze_text_grouping(text_metadata_list, slide_context=""):
+    """AI가 텍스트박스들을 분석하여 그룹핑 결정 (GPT-5 사용)"""
+    
+    # 텍스트 목록 생성
+    texts = [meta["text"] for meta in text_metadata_list if meta["text"].strip()]
+    
+    if not texts:
+        return []
+    
+    prompt = f"""
+다음 슬라이드의 텍스트들을 분석하여 그룹핑해주세요:
+
+텍스트들: {texts}
+슬라이드 컨텍스트: {slide_context}
+
+그룹핑 규칙:
+1. 문맥상 연결된 텍스트들은 같은 그룹 (예: "안녕하세요" + "반갑습니다")
+2. 독립적인 정보 단위는 개별 그룹 (예: "제품명", "가격")
+3. 스타일링을 위한 의도적 분할은 개별 그룹 (예: "100" + "개", "$" + "50")
+4. 숫자+단위, 통화+금액, 라벨+값 등은 분리
+5. 완전한 문장의 일부인 경우만 그룹핑
+
+그룹핑 결과를 JSON 형태로 출력:
+[
+    {{"group": 1, "text_indices": [0, 1, 2]}},
+    {{"group": 2, "text_indices": [3]}},
+    {{"group": 3, "text_indices": [4, 5]}}
+]
+
+텍스트 인덱스는 0부터 시작합니다.
+"""
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1000,
+            temperature=0.1
+        )
+        
+        content = response.choices[0].message.content.strip()
+        
+        # JSON 파싱
+        import json
+        import re
+        
+        # JSON 부분만 추출
+        json_match = re.search(r'\[.*\]', content, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(0)
+            groups = json.loads(json_str)
+            return groups
+        else:
+            print(f"⚠️ AI 응답에서 JSON을 찾을 수 없습니다: {content}")
+            return []
+            
+    except Exception as e:
+        print(f"❌ AI 그룹핑 분석 중 오류: {e}")
+        return []
+
+
+def smart_split_translation(translated_text, num_parts):
+    """번역된 텍스트를 자연스럽게 분할 (GPT-5 사용)"""
+    
+    if num_parts <= 1:
+        return [translated_text]
+    
+    prompt = f"""
+다음 번역된 텍스트를 {num_parts}개의 부분으로 자연스럽게 분할해주세요:
+
+번역된 텍스트: "{translated_text}"
+분할 개수: {num_parts}
+
+각 부분이 자연스러운 문장이나 구문이 되도록 분할해주세요.
+의미 단위를 고려하여 분할하세요.
+
+분할 결과를 JSON 배열로 출력:
+["첫 번째 부분", "두 번째 부분", "세 번째 부분"]
+"""
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=500,
+            temperature=0.1
+        )
+        
+        content = response.choices[0].message.content.strip()
+        
+        # JSON 파싱
+        import json
+        import re
+        
+        # JSON 배열 부분만 추출
+        json_match = re.search(r'\[.*\]', content, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(0)
+            split_texts = json.loads(json_str)
+            
+            # 개수가 맞지 않으면 수동으로 분할
+            if len(split_texts) != num_parts:
+                print(f"⚠️ AI 분할 결과 개수 불일치: {len(split_texts)} != {num_parts}")
+                return manual_split_text(translated_text, num_parts)
+            
+            return split_texts
+        else:
+            print(f"⚠️ AI 응답에서 JSON을 찾을 수 없습니다: {content}")
+            return manual_split_text(translated_text, num_parts)
+            
+    except Exception as e:
+        print(f"❌ AI 텍스트 분할 중 오류: {e}")
+        return manual_split_text(translated_text, num_parts)
+
+
+def manual_split_text(text, num_parts):
+    """수동으로 텍스트 분할 (AI 실패 시 백업)"""
+    if num_parts <= 1:
+        return [text]
+    
+    # 공백으로 분할
+    words = text.split()
+    if len(words) <= num_parts:
+        return words + [""] * (num_parts - len(words))
+    
+    # 균등하게 분할
+    words_per_part = len(words) // num_parts
+    result = []
+    
+    for i in range(num_parts):
+        start = i * words_per_part
+        if i == num_parts - 1:  # 마지막 부분은 나머지 모든 단어
+            end = len(words)
+        else:
+            end = (i + 1) * words_per_part
+        
+        part = " ".join(words[start:end])
+        result.append(part)
+    
+    return result
+
+
+def translate_text_group_with_style_preservation(group_metadata, target_lang, tone, client, use_deepseek=False):
+    """텍스트 그룹을 번역하되 각 텍스트박스의 스타일 보존"""
+    
+    if not group_metadata:
+        return []
+    
+    # 1. 그룹의 모든 텍스트를 하나로 합침
+    combined_text = " ".join([meta["text"] for meta in group_metadata if meta["text"].strip()])
+    
+    if not combined_text.strip():
+        return group_metadata
+    
+    # 2. 전체 문맥으로 번역
+    print(f"   🔤 그룹 번역 중: {combined_text[:50]}...")
+    
+    # 태그된 텍스트로 변환 (기존 로직 활용)
+    tagged_text = f"[[R1]]{combined_text}[[/R1]]"
+    translated = gpt_translate_tagged(tagged_text, client, target_lang, tone, use_deepseek)
+    translated = translated.strip().strip('"').strip("'")
+    
+    # 3. 번역된 텍스트를 원래 텍스트박스 개수만큼 분할
+    num_parts = len(group_metadata)
+    split_texts = smart_split_translation(translated, num_parts)
+    
+    # 4. 각 텍스트박스에 번역된 텍스트와 원래 스타일 적용
+    result = []
+    for i, box_meta in enumerate(group_metadata):
+        translated_text = split_texts[i] if i < len(split_texts) else ""
+        
+        result.append({
+            "text": translated_text,
+            "position": box_meta["position"],
+            "style": box_meta["style"],
+            "has_text_frame": box_meta["has_text_frame"]
+        })
+    
+    return result
+
+
+def apply_smart_grouping_to_slide(slide, target_lang, tone, client, use_deepseek=False, font_scale=1.0):
+    """슬라이드에 스마트 그룹핑 적용"""
+    
+    print(f"   🧠 스마트 그룹핑 적용 중...")
+    
+    # 1. 모든 텍스트박스 수집 및 메타데이터 추출
+    text_boxes = []
+    text_metadata = []
+    
+    for shape in slide.shapes:
+        if hasattr(shape, 'text_frame') and shape.text_frame and shape.text_frame.text.strip():
+            text_boxes.append(shape)
+            metadata = get_text_box_metadata(shape)
+            text_metadata.append(metadata)
+    
+    if not text_metadata:
+        return True
+    
+    # 2. AI 기반 그룹핑 분석
+    groups = ai_analyze_text_grouping(text_metadata, f"슬라이드 {slide.slide_id}")
+    
+    if not groups:
+        print(f"   ⚠️ AI 그룹핑 실패, 개별 번역으로 진행")
+        return False
+    
+    # 3. 각 그룹 번역 및 적용
+    for group_info in groups:
+        group_indices = group_info.get("text_indices", [])
+        if not group_indices:
+            continue
+        
+        # 그룹의 메타데이터 수집
+        group_metadata = [text_metadata[i] for i in group_indices if i < len(text_metadata)]
+        
+        if len(group_metadata) <= 1:
+            # 단일 텍스트박스는 기존 방식으로 처리
+            continue
+        
+        # 그룹 번역
+        translated_group = translate_text_group_with_style_preservation(
+            group_metadata, target_lang, tone, client, use_deepseek
+        )
+        
+        # 원래 텍스트박스에 적용
+        for i, box_idx in enumerate(group_indices):
+            if i < len(translated_group) and box_idx < len(text_boxes):
+                original_box = text_boxes[box_idx]
+                translated_text = translated_group[i]["text"]
+                
+                # 텍스트 업데이트
+                update_text_box_with_translation(original_box, translated_text, font_scale)
+    
+    print(f"   ✅ 스마트 그룹핑 완료")
+    return True
+
+
+def update_text_box_with_translation(text_box, translated_text, font_scale=1.0):
+    """텍스트박스에 번역된 텍스트 적용"""
+    
+    if not hasattr(text_box, 'text_frame') or not text_box.text_frame:
+        return
+    
+    # 기존 내용을 번역된 텍스트로 교체
+    for paragraph in text_box.text_frame.paragraphs:
+        for run in paragraph.runs:
+            run.text = ""
+    
+    # 첫 번째 문단의 첫 번째 run에 번역된 텍스트 적용
+    if text_box.text_frame.paragraphs and text_box.text_frame.paragraphs[0].runs:
+        first_run = text_box.text_frame.paragraphs[0].runs[0]
+        first_run.text = translated_text
+        
+        # 폰트 크기 조정
+        if font_scale != 1.0 and first_run.font.size:
+            from pptx.util import Pt
+            original_size = first_run.font.size.pt
+            adjusted_size = original_size * font_scale
+            first_run.font.size = Pt(adjusted_size)

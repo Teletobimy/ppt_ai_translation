@@ -138,6 +138,16 @@ def main():
             help="1.0이 기본 크기입니다. 0.5는 절반 크기, 2.0은 두 배 크기입니다"
         )
         
+        # 스마트 그룹핑 옵션
+        st.markdown("---")
+        st.subheader("🧠 고급 기능")
+        
+        use_smart_grouping = st.checkbox(
+            "스마트 그룹핑 사용",
+            value=True,
+            help="AI가 텍스트박스들을 분석하여 문맥상 연결된 텍스트들을 그룹으로 번역합니다. 스타일링을 위한 분할된 텍스트는 자동으로 분리합니다."
+        )
+        
         # Show preview
         if font_scale != 1.0:
             if font_scale < 1.0:
@@ -153,7 +163,7 @@ def main():
     tab1, tab2, tab3, tab4 = st.tabs(["📤 번역", "📊 비교", "🚩 검토", "ℹ️ 정보"])
     
     with tab1:
-        translation_tab(openai_api_key, deepseek_api_key, target_language, tone, use_deepseek, auto_evaluate, confidence_threshold, font_scale)
+        translation_tab(openai_api_key, deepseek_api_key, target_language, tone, use_deepseek, auto_evaluate, confidence_threshold, font_scale, use_smart_grouping)
     
     with tab2:
         comparison_tab()
@@ -166,7 +176,7 @@ def main():
 
 
 def translation_tab(openai_api_key: str, deepseek_api_key: str, target_language: str, 
-                   tone: str, use_deepseek: bool, auto_evaluate: bool, confidence_threshold: int, font_scale: float = 1.0):
+                   tone: str, use_deepseek: bool, auto_evaluate: bool, confidence_threshold: int, font_scale: float = 1.0, use_smart_grouping: bool = True):
     """Translation tab content"""
     
     st.markdown('<h2 class="sub-header">📤 PPT 번역</h2>', unsafe_allow_html=True)
@@ -218,12 +228,12 @@ def translation_tab(openai_api_key: str, deepseek_api_key: str, target_language:
                 return st.session_state.translation_cancelled
             
             translate_file(uploaded_file, openai_api_key, deepseek_api_key, 
-                          target_language, tone, use_deepseek, auto_evaluate, confidence_threshold, font_scale, should_stop)
+                          target_language, tone, use_deepseek, auto_evaluate, confidence_threshold, font_scale, use_smart_grouping, should_stop)
 
 
 def translate_file(uploaded_file, openai_api_key: str, deepseek_api_key: str, 
                   target_language: str, tone: str, use_deepseek: bool, 
-                  auto_evaluate: bool, confidence_threshold: int, font_scale: float = 1.0, should_stop=None):
+                  auto_evaluate: bool, confidence_threshold: int, font_scale: float = 1.0, use_smart_grouping: bool = True, should_stop=None):
     """Handle file translation"""
     
     try:
@@ -258,6 +268,7 @@ def translate_file(uploaded_file, openai_api_key: str, deepseek_api_key: str,
                 use_deepseek,
                 progress_callback,
                 font_scale,
+                use_smart_grouping,
                 should_stop
             )
         
