@@ -10,7 +10,7 @@ def test_gpt5_translation():
     # API 키 확인
     openai_api_key = os.getenv("OPENAI_API_KEY")
     if not openai_api_key:
-        print("❌ OPENAI_API_KEY 환경변수를 설정해주세요.")
+        print("ERROR - OPENAI_API_KEY 환경변수를 설정해주세요.")
         return False
     
     print("GPT-5 번역 품질 테스트 시작\n")
