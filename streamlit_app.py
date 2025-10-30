@@ -83,6 +83,10 @@ if "flagged_translations" not in st.session_state:
     st.session_state.flagged_translations = []
 if "retranslate_data" not in st.session_state:
     st.session_state.retranslate_data = None
+if "is_translating" not in st.session_state:
+    st.session_state.is_translating = False
+if "translation_cancelled" not in st.session_state:
+    st.session_state.translation_cancelled = False
 
 
 def main():
@@ -188,15 +192,38 @@ def translation_tab(openai_api_key: str, deepseek_api_key: str, target_language:
             st.error("❌ 중국어 번역 서비스가 일시적으로 사용할 수 없습니다. 다른 언어를 선택하거나 잠시 후 다시 시도해주세요.")
             return
         
-        # Translation button
-        if st.button("🚀 번역 시작", type="primary", use_container_width=True):
+        # Translation button with start/stop functionality
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            if not st.session_state.is_translating:
+                if st.button("🚀 번역 시작", type="primary", use_container_width=True):
+                    st.session_state.is_translating = True
+                    st.session_state.translation_cancelled = False
+                    st.rerun()
+            else:
+                if st.button("⏹️ 번역 중지", type="secondary", use_container_width=True):
+                    st.session_state.translation_cancelled = True
+                    st.session_state.is_translating = False
+                    st.rerun()
+        
+        with col2:
+            if st.session_state.is_translating:
+                st.info("🔄 번역 진행 중...")
+        
+        # Start translation if button was clicked
+        if st.session_state.is_translating and not st.session_state.translation_cancelled:
+            # Create a stop signal function
+            def should_stop():
+                return st.session_state.translation_cancelled
+            
             translate_file(uploaded_file, openai_api_key, deepseek_api_key, 
-                          target_language, tone, use_deepseek, auto_evaluate, confidence_threshold, font_scale)
+                          target_language, tone, use_deepseek, auto_evaluate, confidence_threshold, font_scale, should_stop)
 
 
 def translate_file(uploaded_file, openai_api_key: str, deepseek_api_key: str, 
                   target_language: str, tone: str, use_deepseek: bool, 
-                  auto_evaluate: bool, confidence_threshold: int, font_scale: float = 1.0):
+                  auto_evaluate: bool, confidence_threshold: int, font_scale: float = 1.0, should_stop=None):
     """Handle file translation"""
     
     try:
@@ -224,8 +251,16 @@ def translate_file(uploaded_file, openai_api_key: str, deepseek_api_key: str,
                 deepseek_api_key,
                 use_deepseek,
                 progress_callback,
-                font_scale
+                font_scale,
+                should_stop
             )
+        
+        # Check if translation was cancelled
+        if translated_file_path is None:
+            st.warning("⏹️ 번역이 중지되었습니다.")
+            st.session_state.is_translating = False
+            st.session_state.translation_cancelled = False
+            return
         
         # Translation completed
         progress_bar.progress(1.0)
@@ -258,12 +293,20 @@ def translate_file(uploaded_file, openai_api_key: str, deepseek_api_key: str,
         
         st.success("🎉 번역이 성공적으로 완료되었습니다!")
         
+        # Reset translation state
+        st.session_state.is_translating = False
+        st.session_state.translation_cancelled = False
+        
         # Show next steps
         st.info("💡 다음 단계: '비교' 탭에서 원본과 번역본을 비교하거나, '검토' 탭에서 플래그된 번역을 확인하세요.")
         
     except Exception as e:
         st.error(f"❌ 번역 중 오류가 발생했습니다: {str(e)}")
         st.error(f"상세 오류: {traceback.format_exc()}")
+        
+        # Reset translation state on error
+        st.session_state.is_translating = False
+        st.session_state.translation_cancelled = False
     
     finally:
         # Clean up temporary file

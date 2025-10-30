@@ -399,7 +399,77 @@ def gpt_translate_tagged(tagged_text: str, client, target_lang: str, tone: str, 
     return content
 
 
-def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_api_key: str, deepseek_api_key: str, use_deepseek=False, progress_callback=None, font_scale=1.0):
+def process_nested_shapes(shapes, target_lang, tone, client, use_deepseek, font_scale, progress_callback, slide_num, shape_path="", should_stop=None):
+    """중첩된 shape들을 재귀적으로 처리"""
+    for shape_idx, shape in enumerate(shapes):
+        # 중지 신호 확인
+        if should_stop and should_stop():
+            print("   ⏹️ 번역이 중지되었습니다.")
+            return False
+            
+        current_path = f"{shape_path}.{shape_idx}" if shape_path else str(shape_idx)
+        
+        # 텍스트 프레임 처리
+        if getattr(shape, "has_text_frame", False) and shape.has_text_frame:
+            tf = shape.text_frame
+            for p_idx, p in enumerate(tf.paragraphs):
+                tagged, style_map = tag_paragraph(p)
+                if not tagged:
+                    continue
+                preview = (tagged[:40] + "...") if len(tagged) > 40 else tagged
+                print(f"   🔤 번역 중(중첩텍스트): {preview}")
+                if progress_callback:
+                    progress_callback(slide_num, 0, f"중첩 텍스트 번역 중: {preview}")
+                
+                translated = gpt_translate_tagged(tagged, client, target_lang, tone, use_deepseek)
+                translated = translated.strip().strip('"').strip("'")
+                
+                if not try_inplace_update_paragraph(p, translated, font_scale):
+                    rebuild_paragraph_from_tagged(p, translated, style_map, font_scale)
+                
+                time.sleep(SLEEP_SEC)
+        
+        # 표 처리 (중첩된 표 포함)
+        elif getattr(shape, "has_table", False) and shape.has_table:
+            print(f"   📊 표 처리 중 (경로: {current_path})")
+            for row_idx, row in enumerate(shape.table.rows):
+                for cell_idx, cell in enumerate(row.cells):
+                    # 셀의 텍스트 프레임 처리
+                    if getattr(cell, "text_frame", None):
+                        tf = cell.text_frame
+                        for p_idx, p in enumerate(tf.paragraphs):
+                            tagged, style_map = tag_paragraph(p)
+                            if not tagged:
+                                continue
+                            translated = gpt_translate_tagged(tagged, client, target_lang, tone, use_deepseek)
+                            translated = translated.strip().strip('"').strip("'")
+                            
+                            if not try_inplace_update_paragraph(p, translated, font_scale):
+                                rebuild_paragraph_from_tagged(p, translated, style_map, font_scale)
+                            time.sleep(SLEEP_SEC)
+                    
+                    # 셀 안의 다른 shape들 처리 (중첩된 표, 텍스트박스 등)
+                    if hasattr(cell, 'shapes') and cell.shapes:
+                        print(f"     🔍 셀 내부 shape 발견 (행:{row_idx}, 열:{cell_idx})")
+                        if not process_nested_shapes(
+                            cell.shapes, target_lang, tone, client, use_deepseek, 
+                            font_scale, progress_callback, slide_num, f"{current_path}.table_{row_idx}_{cell_idx}", should_stop
+                        ):
+                            return False
+        
+        # 기타 shape 타입들도 확인 (그룹, 텍스트박스 등)
+        elif hasattr(shape, 'shapes') and shape.shapes:
+            print(f"   🔍 그룹 shape 발견 (경로: {current_path})")
+            if not process_nested_shapes(
+                shape.shapes, target_lang, tone, client, use_deepseek, 
+                font_scale, progress_callback, slide_num, current_path, should_stop
+            ):
+                return False
+    
+    return True
+
+
+def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_api_key: str, deepseek_api_key: str, use_deepseek=False, progress_callback=None, font_scale=1.0, should_stop=None):
     """
     프레젠테이션을 번역하는 메인 함수
     progress_callback: (current_slide, total_slides, current_text) -> None
@@ -452,45 +522,18 @@ def translate_presentation(pptx_path: str, target_lang: str, tone: str, openai_a
         if progress_callback:
             progress_callback(s_idx, slide_count, f"슬라이드 {s_idx} 처리 중...")
 
-        for shape_idx, shape in enumerate(slide.shapes):
-            # 텍스트 프레임
-            if getattr(shape, "has_text_frame", False) and shape.has_text_frame:
-                tf = shape.text_frame
-                for p_idx, p in enumerate(tf.paragraphs):
-                    tagged, style_map = tag_paragraph(p)
-                    if not tagged:
-                        continue
-                    preview = (tagged[:40] + "...") if len(tagged) > 40 else tagged
-                    print(f"   🔤 번역 중(서식보존): {preview}")
-                    if progress_callback:
-                        progress_callback(s_idx, slide_count, f"텍스트 번역 중: {preview}")
-                    
-                    translated = gpt_translate_tagged(tagged, client, target_lang, tone, use_deepseek)
-                    translated = translated.strip().strip('"').strip("'")
-                    
-                    if not try_inplace_update_paragraph(p, translated, font_scale):
-                      # 2️⃣ 실패하면 rebuild 방식으로 fallback
-                       rebuild_paragraph_from_tagged(p, translated, style_map, font_scale)
-                    
-                    time.sleep(SLEEP_SEC)
-
-            # 표(셀 내부도 paragraph 단위로 처리)
-            elif getattr(shape, "has_table", False) and shape.has_table:
-                for row_idx, row in enumerate(shape.table.rows):
-                    for cell_idx, cell in enumerate(row.cells):
-                        if not getattr(cell, "text_frame", None):
-                            continue
-                        tf = cell.text_frame
-                        for p_idx, p in enumerate(tf.paragraphs):
-                            tagged, style_map = tag_paragraph(p)
-                            if not tagged:
-                                continue
-                            translated = gpt_translate_tagged(tagged, client, target_lang, tone, use_deepseek)
-                            translated = translated.strip().strip('"').strip("'")
-                            
-                            if not try_inplace_update_paragraph(p, translated, font_scale):
-                                rebuild_paragraph_from_tagged(p, translated, style_map, font_scale)
-                            time.sleep(SLEEP_SEC)
+        # 중지 신호 확인
+        if should_stop and should_stop():
+            print(f"⏹️ 슬라이드 {s_idx}에서 번역이 중지되었습니다.")
+            return None
+            
+        # 모든 shape를 재귀적으로 처리 (중첩된 표, 텍스트박스 등 포함)
+        if not process_nested_shapes(
+            slide.shapes, target_lang, tone, client, use_deepseek, 
+            font_scale, progress_callback, s_idx, "", should_stop
+        ):
+            print(f"⏹️ 슬라이드 {s_idx}에서 번역이 중지되었습니다.")
+            return None
 
     folder = os.path.dirname(pptx_path)
     stem, ext = os.path.splitext(os.path.basename(pptx_path))
